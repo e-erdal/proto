@@ -1,0 +1,30 @@
+// Test Commment
+
+/*
+    Test Multi-line Comment
+*/
+
+GlobalVar = "Yes"
+Category
+{   
+    Hello      = "Hello World"
+
+    Num1       = 12
+    NegNum     = -16
+
+    Float      = 13.37
+    NegFloat   = -73.31
+
+    Bool_true  = true
+    Bool_false = false
+
+    SubCategory
+    {
+        SubWord = "Hey"
+
+        SubSubCategory
+        {
+            SubSubWord = "Deep"
+        }
+    }
+}

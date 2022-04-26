@@ -1,0 +1,34 @@
+name: WIN32-GNU
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  Build:
+    runs-on: windows-latest
+
+    env:
+      CMAKE_BUILD_DIR: ${{ github.workspace }}/build/
+      CMAKE_INSTALL_DIR: ${{ github.workspace }}/install/
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - uses: lukka/get-cmake@latest
+      - uses: crazy-max/ghaction-chocolatey@v1
+        with:
+          args: install ninja --accept-license -y
+
+      - name: Generate project files
+        run: |
+          cmake -B "${{ env.CMAKE_BUILD_DIR }}" -DCMAKE_INSTALL_PREFIX="${{ env.CMAKE_INSTALL_DIR }}" -DCMAKE_DEBUG_POSTFIX=d -G Ninja
+
+      - name: Build
+        run: |
+          cmake --build "${{ env.CMAKE_BUILD_DIR }}" --target all --config Debug

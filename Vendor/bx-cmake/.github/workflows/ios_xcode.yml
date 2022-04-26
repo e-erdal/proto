@@ -1,0 +1,32 @@
+name: iOS-Xcode
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  Build:
+    runs-on: macos-latest
+
+    env:
+      CMAKE_BUILD_DIR: ${{ github.workspace }}/build/
+      CMAKE_INSTALL_DIR: ${{ github.workspace }}/install/
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          submodules: recursive
+
+      - uses: lukka/get-cmake@latest
+
+      - name: Xcode
+        run: sudo xcode-select -s /Applications/Xcode_12.3.app
+
+      - name: Generate project files
+        run: |
+          cmake -B "${{ env.CMAKE_BUILD_DIR }}" -DCMAKE_INSTALL_PREFIX="${{ env.CMAKE_INSTALL_DIR }}" -DCMAKE_DEBUG_POSTFIX=d -G Xcode
+
+      - name: Build
+        run: |
+          cmake --build "${{ env.CMAKE_BUILD_DIR }}" --target bx --config Debug

@@ -1,0 +1,3 @@
+[submodule "bimg"]
+	path = bimg
+	url = https://github.com/bkaradzic/bimg.git

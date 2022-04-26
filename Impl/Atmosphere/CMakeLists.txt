@@ -1,0 +1,5 @@
+file(GLOB_RECURSE SOURCES ./*.cc)
+add_executable(Atmosphere ${SOURCES})
+    target_link_libraries(Atmosphere PUBLIC ProtoBase)
+    target_include_directories(Atmosphere PUBLIC .)
+    set_target_properties(Atmosphere PROPERTIES OUTPUT_NAME "Atmosphere-${CMAKE_BUILD_TYPE}")
