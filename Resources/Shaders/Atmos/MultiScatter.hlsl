@@ -107,6 +107,9 @@ float3 ComputeSample(float2 rayPos, float2 sunDir)
             
             transmittance *= altitudeTrans;
         }
+        
+        totalL2 += L2;
+        totalFms += Fms;
     }
 
     float3 L2 = totalL2 / SampleCount;
