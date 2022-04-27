@@ -11,7 +11,7 @@ _OverrideSettings_
 RWTexture2D<float4> Transmittance : register(u0);
 
 // https://cs.dartmouth.edu/wjarosz/publications/novak14residual.pdf
-float3 CalculateTransmittance(float2 rayPosition, float2 sunDirection)
+float3 CalculateTransmittance(float3 rayPosition, float3 sunDirection)
 {
     // We need to check if ray hits planet first. 
     if (SolveQuadratic(rayPosition, sunDirection, PlanetRadius))
@@ -20,7 +20,7 @@ float3 CalculateTransmittance(float2 rayPosition, float2 sunDirection)
     }
 
     float distance = 0.0;
-    GetQuadraticIntersection(rayPosition, sunDirection, AtmosRadius, distance);
+    GetQuadraticIntersection3D(rayPosition, sunDirection, AtmosRadius, distance);
     float distancePerStep = distance / STEP_COUNT;
 
     float3 transmittance = float3(0.0, 0.0, 0.0);
@@ -46,12 +46,12 @@ void CSMain(int3 threadID : SV_DISPATCHTHREADID)
     float u = float(threadID.x) / width;
     float v = float(threadID.y) / height;
 
-    float sunCosTheta = 2.0 * u - 1.0;  // [0, 1] -> [-1, 1]
-    float sunTheta = acos(sunCosTheta);
     float h = lerp(PlanetRadius, AtmosRadius, v);
-
-    float2 rayPosition = float2(h, 0.0);    
-    float2 sunDirection = normalize(float2(sunCosTheta, sin(sunTheta)));
+    float3 rayPosition = float3(0.0, h, 0.0);
+    
+    // https://www.desmos.com/calculator/guspypmdaa
+    float sunCosTheta = 2.0 * u - 1.0;  // [0, 1] -> [-1, 1]
+    float3 sunDirection = float3(0.0, sunCosTheta, sin(acos(sunCosTheta)));
 
     Transmittance[threadID.xy] = float4(CalculateTransmittance(rayPosition, sunDirection), 1);
 }

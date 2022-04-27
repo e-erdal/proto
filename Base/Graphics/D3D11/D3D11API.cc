@@ -368,22 +368,14 @@ namespace lr
 
     void D3D11API::SetShaderResource(RenderBuffer *pBuffer, RenderBufferTarget target, u32 slot)
     {
-        ID3D11ShaderResourceView **ppSRV = kNullSRV;
-        if (pBuffer) ppSRV[0] = pBuffer->GetShaderResource();
+        ID3D11ShaderResourceView *pSRV = *kNullSRV;
+        if (pBuffer) pSRV = pBuffer->GetShaderResource();
 
-        if (target & RenderBufferTarget::Vertex) m_pContext->VSSetShaderResources(slot, 1, ppSRV);
-        if (target & RenderBufferTarget::Pixel) m_pContext->PSSetShaderResources(slot, 1, ppSRV);
-        if (target & RenderBufferTarget::Compute) m_pContext->CSSetShaderResources(slot, 1, ppSRV);
-        if (target & RenderBufferTarget::Domain) m_pContext->DSSetShaderResources(slot, 1, ppSRV);
-        if (target & RenderBufferTarget::Hull) m_pContext->HSSetShaderResources(slot, 1, ppSRV);
-    }
-
-    void D3D11API::SetUAVResource(RenderBuffer *pBuffer, RenderBufferTarget target, u32 slot)
-    {
-        ID3D11UnorderedAccessView *pUAV = *kNullUAV;
-        if (pBuffer) pUAV = pBuffer->GetUAV();
-
-        m_pContext->CSSetUnorderedAccessViews(slot, 1, &pUAV, 0);
+        if (target & RenderBufferTarget::Vertex) m_pContext->VSSetShaderResources(slot, 1, &pSRV);
+        if (target & RenderBufferTarget::Pixel) m_pContext->PSSetShaderResources(slot, 1, &pSRV);
+        if (target & RenderBufferTarget::Compute) m_pContext->CSSetShaderResources(slot, 1, &pSRV);
+        if (target & RenderBufferTarget::Domain) m_pContext->DSSetShaderResources(slot, 1, &pSRV);
+        if (target & RenderBufferTarget::Hull) m_pContext->HSSetShaderResources(slot, 1, &pSRV);
     }
 
     void D3D11API::SetShaderResource(Texture *pTexture, RenderBufferTarget target, u32 slot)
@@ -396,6 +388,14 @@ namespace lr
         if (target & RenderBufferTarget::Compute) m_pContext->CSSetShaderResources(slot, 1, &pSRV);
         if (target & RenderBufferTarget::Domain) m_pContext->DSSetShaderResources(slot, 1, &pSRV);
         if (target & RenderBufferTarget::Hull) m_pContext->HSSetShaderResources(slot, 1, &pSRV);
+    }
+
+    void D3D11API::SetUAVResource(RenderBuffer *pBuffer, RenderBufferTarget target, u32 slot)
+    {
+        ID3D11UnorderedAccessView *pUAV = *kNullUAV;
+        if (pBuffer) pUAV = pBuffer->GetUAV();
+
+        m_pContext->CSSetUnorderedAccessViews(slot, 1, &pUAV, 0);
     }
 
     void D3D11API::SetUAVResource(Texture *pTexture, RenderBufferTarget target, u32 slot)

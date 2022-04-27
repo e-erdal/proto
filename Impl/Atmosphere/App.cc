@@ -1,10 +1,35 @@
 #include "App.hh"
 
+#include "Utils/Random.hh"
+
+#include <cy/cySampleElim.h>
+#include <cy/cyPoint.h>
+
+static void GeneratePoissonDiscSamples(u32 sampleCount, eastl::vector<cy::Point2f> &output)
+{
+    Random::Seed();
+
+    eastl::vector<cy::Point2f> randomPoints(sampleCount * 10);
+
+    for (auto &point : randomPoints)
+    {
+        point.x = Random::Float(0, 1);
+        point.y = Random::Float(0, 1);
+    }
+
+    output.resize(sampleCount);
+
+    cy::WeightedSampleElimination<cy::Point2f, float, 2> eliminator;
+    eliminator.SetTiling(true);
+    eliminator.Eliminate(randomPoints.data(), randomPoints.size(), output.data(), output.size());
+}
+
 void AtmosphereApp::Init()
 {
     /// CONFIG INFO
     m_Config.SkyLUTRes = XMINT2(200 * 2, 100 * 2);
     m_Config.TransmittanceLUTRes = XMINT2(256, 64);
+    m_Config.MultiScatterLUTRes = XMINT2(256, 256);
 
     /// LUT INFO
     m_LUTData.EyePosition = XMFLOAT3(0, 0, 0);
@@ -18,12 +43,19 @@ void AtmosphereApp::Init()
     m_SunInfo.SunIntensity = m_LUTData.SunIntensity;
     m_SunInfo.SunRadius = 0.4;
 
+    /// MULTI SCATTER INFO
+    m_MSInfo.SampleCount = 128;
+    m_MSInfo.StepCount = 256;
+    m_MSInfo.TerrainAlbedo = XMFLOAT3(0.3, 0.3, 0.3);
+    m_MSInfo.SunIntensity = m_SunInfo.SunIntensity;
+
     ///////////////////////////////////
     /// LOAD SHADERS
 
     ShaderDesc genericShader;
     genericShader.Type = ShaderType::Compute;
     m_TransmittanceCS.Init(&genericShader, "Atmos/Transmittance");
+    m_MSCS.Init(&genericShader, "Atmos/MultiScatter");
 
     genericShader.Type = ShaderType::Vertex;
     m_SkyLUTVS.Init(&genericShader, "Atmos/LUT");
@@ -53,8 +85,25 @@ void AtmosphereApp::Init()
     genericBuffer.DataLen = sizeof(SunInfo);
     m_SunBuffer.Init(genericBuffer);
 
+    genericBuffer.DataLen = sizeof(MultiScatterInfo);
+    m_MSBuffer.Init(genericBuffer);
+
+    // Sample Buffer for MS
+    eastl::vector<cy::Point2f> samples;
+    GeneratePoissonDiscSamples(m_MSInfo.SampleCount, samples);
+
+    genericBuffer.Type = RenderBufferType::ShaderResource;
+    genericBuffer.MemFlags = RenderBufferMemoryFlags::Structured;
+    genericBuffer.Usage = RenderBufferUsage::Immutable;
+
+    genericBuffer.ByteStride = sizeof(XMFLOAT2);
+    genericBuffer.pData = &samples[0];
+    genericBuffer.DataLen = samples.size() * genericBuffer.ByteStride;
+    m_SampleBuffer.Init(genericBuffer);
+
     /// CALCULATE TRANSMITTANCE
     UpdateTransmittance();
+    UpdateMS();
     UpdateSkyLut();
 }
 
@@ -89,6 +138,7 @@ void AtmosphereApp::Draw()
     m_API.SetConstantBuffer(&m_SkyLUTBuffer, RenderBufferTarget::Pixel, 1);
 
     m_API.SetShaderResource(&m_TransmittanceLUT, RenderBufferTarget::Pixel, 0);
+    m_API.SetShaderResource(&m_MSLUT, RenderBufferTarget::Pixel, 1);
     m_API
         .SetSamplerState(TextureFiltering::Linear, TextureAddress::Clamp, TextureAddress::Clamp, TextureAddress::Clamp, RenderBufferTarget::Pixel, 0);
 
@@ -156,6 +206,7 @@ void AtmosphereApp::Draw()
     {
         ImGui::Image(&m_TransmittanceLUT, ImVec2(m_Config.TransmittanceLUTRes.x, m_Config.TransmittanceLUTRes.y));
         ImGui::Image(m_SkyLUT.m_ColorAttachments[0], ImVec2(m_Config.SkyLUTRes.x, m_Config.SkyLUTRes.y));
+        ImGui::Image(&m_MSLUT, ImVec2(m_Config.MultiScatterLUTRes.x, m_Config.MultiScatterLUTRes.y));
     }
 
     ImGui::End();
@@ -212,9 +263,66 @@ void AtmosphereApp::UpdateTransmittance()
     m_API.SetShader(&m_TransmittanceCS);
     m_API.SetConstantBuffer(&m_AtmosphereBuffer, RenderBufferTarget::Compute, 0);
     m_API.SetUAVResource(&textureCompute, RenderBufferTarget::Compute, 0);
+    m_API.SetSamplerState(TextureFiltering::Linear,
+                          TextureAddress::Clamp,
+                          TextureAddress::Clamp,
+                          TextureAddress::Clamp,
+                          RenderBufferTarget::Compute,
+                          0);
 
     m_API.Dispatch(ceil(textureComputeData.Width / 16), ceil(textureComputeData.Height / 16), 1);
     m_API.GetGPUTexture(&m_TransmittanceLUT, &textureCompute);
+}
+
+void AtmosphereApp::UpdateMS()
+{
+    m_MSLUT.Delete();
+
+    /// CREATE COMPUTE TEXTURE
+    TextureDesc textureComputeDesc;
+    textureComputeDesc.Type = TextureType::RW;
+
+    TextureData textureComputeData;
+    textureComputeData.Width = m_Config.MultiScatterLUTRes.x;
+    textureComputeData.Height = m_Config.MultiScatterLUTRes.y;
+    textureComputeData.Format = TextureFormat::RGBA32F;
+
+    Texture textureCompute;
+    textureCompute.Init(&textureComputeDesc, &textureComputeData);
+
+    /// CREATE MULTISCATTER TEXTURE
+    TextureDesc textureMSDesc;
+    textureMSDesc.Type = TextureType::Default;
+
+    TextureData textureMSData;
+    textureMSData.Width = textureComputeData.Width;
+    textureMSData.Height = textureComputeData.Height;
+    textureMSData.Format = textureComputeData.Format;
+
+    m_MSLUT.Init(&textureMSDesc, &textureMSData);
+
+    /// MAP BUFFERS
+    m_API.MapBuffer(&m_AtmosphereBuffer, &m_Atmosphere, sizeof(Atmosphere));
+    m_API.MapBuffer(&m_MSBuffer, &m_MSInfo, sizeof(MultiScatterInfo));
+
+    /// PREPARE STATE
+    m_API.SetShader(&m_MSCS);
+    m_API.SetConstantBuffer(&m_AtmosphereBuffer, RenderBufferTarget::Compute, 0);
+    m_API.SetConstantBuffer(&m_MSBuffer, RenderBufferTarget::Compute, 1);
+
+    m_API.SetShaderResource(&m_SampleBuffer, RenderBufferTarget::Compute, 0);
+    m_API.SetShaderResource(&m_TransmittanceLUT, RenderBufferTarget::Compute, 1);
+    m_API.SetUAVResource(&textureCompute, RenderBufferTarget::Compute, 0);
+
+    m_API.SetSamplerState(TextureFiltering::Linear,
+                          TextureAddress::Clamp,
+                          TextureAddress::Clamp,
+                          TextureAddress::Clamp,
+                          RenderBufferTarget::Compute,
+                          0);
+
+    m_API.Dispatch(ceil(textureComputeData.Width / 16), ceil(textureComputeData.Height / 16), 1);
+    m_API.GetGPUTexture(&m_MSLUT, &textureCompute);
 }
 
 void AtmosphereApp::UpdateSkyLut()

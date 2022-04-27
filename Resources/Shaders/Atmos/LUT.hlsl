@@ -1,6 +1,7 @@
 #include "Resources/Shaders/Atmos/Common.hlsl"
 
 Texture2D TransmittanceLut  : register(t0);
+Texture2D MultiScatterLut   : register(t1);
 SamplerState LinearSampler  : register(s0);
 
 cbuffer __ : register(b1)
@@ -33,14 +34,14 @@ float4 PSMain(VSLayout input) : SV_TARGET
     // Non-linear parameterization
     if (v < 0.5) 
     {
-		float coord = 1.0 - 2.0 * v;
-		v = coord * coord;
-	} 
+        float coord = 1.0 - 2.0 * v;
+        v = coord * coord;
+    } 
     else 
     {
-		float coord = v * 2.0 - 1.0;
-		v = -coord * coord;
-	}
+        float coord = v * 2.0 - 1.0;
+        v = -coord * coord;
+    }
 
     float h = length(EyePosition);
     
@@ -88,22 +89,26 @@ float4 PSMain(VSLayout input) : SV_TARGET
         
         // Shadowing factor
         float sunTheta = dot(SunDirection, stepPosition / h);
-        float3 sunTrans = SampleTransmittance(TransmittanceLut, LinearSampler, altitude, sunTheta);
+        float3 sunTrans = SampleLUT(TransmittanceLut, LinearSampler, altitude, sunTheta);
+        float3 MS = SampleLUT(MultiScatterLut, LinearSampler, altitude, sunTheta);
         
         // Get scattering coefficient
-        float3 rayleighCoeff;
-        float mieCoeff;
-        GetScattering(altitude, rayleighCoeff, mieCoeff);
+        float3 rayleighScat;
+        float mieScat;
+        GetScattering(altitude, rayleighScat, mieScat);
         
         // Molecules scattered on ray's position
-        float3 rInScattering = rayleighCoeff * rayleighPhase;
-        float3 mInScattering = mieCoeff * miePhase;
-        float3 inScattering = (rInScattering + mInScattering) * sunTrans;
-        float3 integral = (inScattering - inScattering * altitudeTrans) / extinction;
+        float3 rayleighInScat = rayleighScat * (rayleighPhase + MS);
+        float3 mieInScat = mieScat * (miePhase + MS);
+        float3 scatteringPhase = (rayleighInScat + mieInScat) * sunTrans;
 
-        luminance += integral * transmittance;
+        // https://www.ea.com/frostbite/news/physically-based-unified-volumetric-rendering-in-frostbite
+        // slide 28
+        float3 integral = (scatteringPhase - scatteringPhase * altitudeTrans) / extinction;
+
+        luminance += SunIntensity * (integral * transmittance);
         transmittance *= altitudeTrans;
     }
 
-    return float4(luminance * SunIntensity, 1.0);
+    return float4(luminance, 1.0);
 }

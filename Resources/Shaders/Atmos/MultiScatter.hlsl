@@ -14,22 +14,30 @@ cbuffer ___ : register(b1)
     float SunIntensity;
 }
 
-StructuredBuffer<float2> SampleBuffer       : register(u0);
-RWTexture2D<float4>      MultiScattering    : register(u1);
-Texture2D<float4>        TransmittanceLut   : register(t0);
+RWTexture2D<float4>      MultiScattering    : register(u0);
+StructuredBuffer<float2> SampleBuffer       : register(t0);
+Texture2D<float4>        TransmittanceLut   : register(t1);
 SamplerState             LinearSampler      : register(s0);
 
 // https://stackoverflow.com/questions/9600801/evenly-distributing-n-points-on-a-sphere
 float3 GetUniformSphereSample(float2 dirSample)
 {
-    float dirX = 1.0 - 2.0 * dirSample.x;  // new y direction from 1 to -1
-	float radius = sqrt(1.0 - dirX * dirX);
-	float phi = 2.0 * PI * dirSample.y;
+    float dirX = 1.0 - 2.0 * dirSample.x;  // new direction from 1 to -1
+    float radius = sqrt(max(0, 1.0 - dirX * dirX));
+    float phi = 2.0 * PI * dirSample.y;
 
-	return float3(radius * cos(phi), radius * sin(phi), dirX);
+    return float3(radius * cos(phi), radius * sin(phi), dirX);
 }
 
-float3 ComputeSample(float2 rayPos, float2 sunDir)
+float3 getSphericalDir(float theta, float phi) {
+     float cosPhi = cos(phi);
+     float sinPhi = sin(phi);
+     float cosTheta = cos(theta);
+     float sinTheta = sin(theta);
+     return float3(sinPhi*sinTheta, cosPhi, sinPhi*cosTheta);
+}
+
+float3 ComputeSample(float3 rayPos, float3 sunDir)
 {
     // Start of equation 5
     float3 totalL2 = float3(0.0, 0.0, 0.0);  
@@ -37,7 +45,7 @@ float3 ComputeSample(float2 rayPos, float2 sunDir)
 
     // We already calculated samples using Cem Yuksel's library
     // So just integrate the multiscatter, sample generation is not needed
-    for (uint si = 0; si < SampleCount; si++)
+    for (uint si = 0; si < SampleCount / 2; si++)
     {
         float3 sampleDir = GetUniformSphereSample(SampleBuffer[si]);  // w_s
 
@@ -45,12 +53,9 @@ float3 ComputeSample(float2 rayPos, float2 sunDir)
         // So this is mostly copy-paste from LUT.hlsl
 
         float maxDist = 0.0;
-        float planetDist = 0.0;
-        GetQuadraticIntersection3D(rayPos, sampleDir, PlanetRadius, planetDist);
-        GetQuadraticIntersection3D(rayPos, sampleDir, AtmosRadius, maxDist);
-
-        if (planetDist > 0.0)
-            maxDist = planetDist;
+        bool planetHit = GetQuadraticIntersection3D(rayPos, sampleDir, PlanetRadius, maxDist);
+        if (!planetHit)
+            GetQuadraticIntersection3D(rayPos, sampleDir, AtmosRadius, maxDist);
 
         // Get Rayleigh + Mie phase
         float cosTheta = dot(sampleDir, sunDir);
@@ -70,7 +75,7 @@ float3 ComputeSample(float2 rayPos, float2 sunDir)
             float deltaT = nextT - t;
             t = nextT;
             
-            float3 stepPosition = rayPos + t * sampleDir;
+            float3 stepPosition = rayPos + t * sampleDir;  // w_s
             
             float h = length(stepPosition);
 
@@ -79,35 +84,54 @@ float3 ComputeSample(float2 rayPos, float2 sunDir)
             float3 extinction = GetExtinctionSum(altitude);
             float3 altitudeTrans = exp(-deltaT * extinction);  // T(x, x - tv)
 
-            // Get scattering coefficient
-            float3 rayleighCoeff;
-            float mieCoeff;
-            GetScattering(altitude, rayleighCoeff, mieCoeff);
-
             // Shadowing factor --- S(x, x - tw_s)
             float sunTheta = dot(sunDir, stepPosition / h);
             // This function on paper seems to be wrong?
             // Its getting sample direction instead of step direction
             // So it becomes S(x, x - tw_s) like extinction function
-            float3 sunTrans = SampleTransmittance(TransmittanceLut, LinearSampler, altitude, sunTheta);
+            float3 sunTrans = SampleLUT(TransmittanceLut, LinearSampler, altitude, sunTheta);
 
             // Equation 6
             // Molecules scattered on ray's position
-            float3 rInScattering = rayleighCoeff * rayleighPhase;
-            float3 mInScattering = mieCoeff * miePhase;
-            float3 inScattering = (rInScattering + mInScattering) * sunTrans;  // coeff_s(x) p_u S(x, x - tw_s)
+            float3 rayleighScat;
+            float mieScat;
+            GetScattering(altitude, rayleighScat, mieScat);
+        
+            // Molecules scattered on ray's position
+            float3 rayleighInScat = rayleighScat * rayleighPhase;
+            float3 mieInScat = mieScat * miePhase;
+            float3 scatteringPhase = (rayleighInScat + mieInScat) * sunTrans;
 
-            float3 integralLum = (inScattering - inScattering * altitudeTrans) / extinction;
+            float3 integralLum = (scatteringPhase - scatteringPhase * altitudeTrans) / extinction;
             L2 += integralLum * transmittance;
 
             // Equation 7, a bit different, cancels phase function
-            float3 scatteringCoeff = rayleighCoeff + mieCoeff;
-            float3 integralFactor = (scatteringCoeff - scatteringCoeff * altitudeTrans) / extinction;
+            float3 scatteringNoPhase = rayleighScat + mieScat;
+            float3 integralFactor = (scatteringNoPhase - scatteringNoPhase * altitudeTrans) / extinction;
             Fms += integralFactor * transmittance;
             
             transmittance *= altitudeTrans;
         }
-        
+
+        // Calculate ground albedo
+        if (planetHit)
+        {
+            float3 intersectPos = rayPos + maxDist * sampleDir;
+
+            float h = length(intersectPos);
+            float3 up = intersectPos / h;
+
+            float altitude = h - PlanetRadius;
+            float theta = dot(sunDir, up);
+
+            float3 sunTrans = SampleLUT(TransmittanceLut, LinearSampler, altitude, theta);
+
+            // magic function, actually called Normal.Light
+            float lightTheta = saturate(dot(up, sunDir));
+
+            L2 += sunTrans * transmittance * lightTheta * TerrainAlbedo / PI;
+        }
+
         totalL2 += L2;
         totalFms += Fms;
     }
@@ -127,12 +151,12 @@ void CSMain(int3 threadID : SV_DISPATCHTHREADID)
     float u = float(threadID.x) / width;
     float v = float(threadID.y) / height;
 
-    float sunCosTheta = 2.0 * u - 1.0;  // [0, 1] -> [-1, 1]
-    float sunTheta = acos(sunCosTheta);
     float h = lerp(PlanetRadius, AtmosRadius, v);
-
-    float2 rayPosition = float2(h, 0.0);    
-    float2 sunDirection = normalize(float2(sunCosTheta, sin(sunTheta)));
+    float3 rayPosition = float3(0.0, h, 0.0);
+    
+    // https://www.desmos.com/calculator/guspypmdaa
+    float sunCosTheta = 2.0 * u - 1.0;  // [0, 1] -> [-1, 1]
+    float3 sunDirection = float3(0.0, sunCosTheta, sin(acos(sunCosTheta)));
 
     MultiScattering[threadID.xy] = float4(ComputeSample(rayPosition, sunDirection), 1.0);
 }

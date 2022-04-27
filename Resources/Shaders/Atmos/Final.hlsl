@@ -42,7 +42,7 @@ float3 ACES(float3 x)
     const float d = 0.59;
     const float e = 0.14;
 
-	return saturate(pow(abs((x * (a * x + b)) / (x * (c * x + d) + e)), 1 / 1.7));
+    return saturate(pow(abs((x * (a * x + b)) / (x * (c * x + d) + e)), 1 / 1.7));
 }
 
 float3 FixHDR(float2 seed, float3 color)

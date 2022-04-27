@@ -19,10 +19,10 @@ cbuffer Atmosphere : register(b0)
     float3 OzoneAbsorption;
 }
 
-float3 SampleTransmittance(Texture2D transmittanceLut, SamplerState linearSampler, float altitude, float theta)
+float3 SampleLUT(Texture2D targetLUT, SamplerState linearSampler, float altitude, float theta)
 {
     float2 uv = float2(0.5 + 0.5 * theta, max(0.0, min(altitude / (AtmosRadius - PlanetRadius), 1.0)));
-    return transmittanceLut.Sample(linearSampler, uv).rgb;
+    return targetLUT.SampleLevel(linearSampler, uv, 0.0).xyz;
 }
 
 float3 GetExtinctionSum(float altitude)

@@ -97,6 +97,7 @@ public:
     void SetSunDirection(XMFLOAT2 rotation);
     
     void UpdateTransmittance();
+    void UpdateMS();
     void UpdateSkyLut();
 
 private:
@@ -104,6 +105,7 @@ private:
     {
         XMINT2 SkyLUTRes;
         XMINT2 TransmittanceLUTRes;
+        XMINT2 MultiScatterLUTRes;
     } m_Config;
 
     struct SkyLUTData
@@ -121,6 +123,16 @@ private:
         XMFLOAT3 SunDirection;
         float SunIntensity;
     } m_SunInfo;
+
+    struct MultiScatterInfo
+    {
+        XMFLOAT3 TerrainAlbedo;
+        float StepCount;
+        u32 SampleCount;
+        float SunIntensity;
+        
+        float _padding[2];
+    } m_MSInfo;
  
 private:
     XMFLOAT2 m_SunRotation;
@@ -141,4 +153,9 @@ private:
 
     RenderBuffer m_FrustumBuffer;
     RenderBuffer m_SunBuffer;
+
+    Shader m_MSCS;
+    RenderBuffer m_MSBuffer;
+    RenderBuffer m_SampleBuffer;
+    Texture m_MSLUT;
 };
