@@ -29,14 +29,6 @@ float3 GetUniformSphereSample(float2 dirSample)
     return float3(radius * cos(phi), radius * sin(phi), dirX);
 }
 
-float3 getSphericalDir(float theta, float phi) {
-     float cosPhi = cos(phi);
-     float sinPhi = sin(phi);
-     float cosTheta = cos(theta);
-     float sinTheta = sin(theta);
-     return float3(sinPhi*sinTheta, cosPhi, sinPhi*cosTheta);
-}
-
 float3 ComputeSample(float3 rayPos, float3 sunDir)
 {
     // Start of equation 5
