@@ -29,7 +29,7 @@ void AtmosphereApp::Init()
     /// CONFIG INFO
     m_Config.SkyLUTRes = XMINT2(200 * 2, 100 * 2);
     m_Config.TransmittanceLUTRes = XMINT2(256, 64);
-    m_Config.MultiScatterLUTRes = XMINT2(256, 256);
+    m_Config.MultiScatterLUTRes = XMINT2(32, 32);
 
     /// LUT INFO
     m_LUTData.EyePosition = XMFLOAT3(0, 0, 0);
