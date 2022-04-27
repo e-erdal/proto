@@ -108,7 +108,7 @@ namespace lr
         ID3DBlob *pData = nullptr;
 
         auto CompileShader = [&](const eastl::string &entry, ShaderType type) {
-            u32 flags = D3DCOMPILE_ENABLE_STRICTNESS | ToOptimizeLevel(0);
+            u32 flags = D3DCOMPILE_ENABLE_STRICTNESS | ToOptimizeLevel(3);
 
             D3DCompile(code.c_str(),
                        code.length(),
